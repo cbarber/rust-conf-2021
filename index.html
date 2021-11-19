@@ -167,17 +167,21 @@ emit_event(&Event::SavedData, &mut token); // all good
 				</section>
 				<section>
 					<pre><code data-trim data-noescape class="rust">
-fn encrypt_message(key: &Key, nonce: Nonce, ...) {
-    ...
-}
+fn encrypt_message(key: &Key, nonce: Nonce, ...) { ... }
 
-let nonce = gen_nonce();
-let tag = encrypt_message(&key, nonce, ...);
+loop {
+	let nonce = gen_nonce();
+
+	let stdin = read_stdin();
+	let tag = encrypt_message(&key, nonce, stdin);
+	...
+}
 					</code></pre>
 					<pre class="fragment"><code data-trim data-noescape class="rust">
-mod libsodium {
+mod sodiumoxide {
 	struct Nonce { ... }
 	impl Clone for Nonce { ... }
+	impl Copy for Nonce { ... }
 }
 
 let x = Nonce::new(...);
@@ -204,7 +208,7 @@ let inner = InnerOsccState {
 	...
 }
 let worker = spawn(async move { inner.run(receiver).await });
-let state = OsccState { inner, sender, worker };
+let state = OsccState { inner, worker };
 						</code></pre>
 					</section>
 					<section>
@@ -285,6 +289,7 @@ fn component() {
 						* Resource pool exhaustion
 						* Security
 						* Deadlocking
+						* Stale closures
 
 						only things left are cache invalidation and naming things <!-- .element: class="fragment" -->
 					</script>
