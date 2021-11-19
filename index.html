@@ -4,11 +4,11 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-		<title>reveal.js</title>
+		<title>Rust Conf 2021</title>
 
 		<link rel="stylesheet" href="dist/reset.css">
 		<link rel="stylesheet" href="dist/reveal.css">
-		<link rel="stylesheet" href="dist/theme/black.css">
+		<link rel="stylesheet" href="dist/theme/rust.css">
 
 		<!-- Theme used for syntax highlighted code -->
 		<link rel="stylesheet" href="plugin/highlight/monokai.css">
@@ -16,8 +16,297 @@
 	<body>
 		<div class="reveal">
 			<div class="slides">
-				<section>Slide 1</section>
-				<section>Slide 2</section>
+				<section data-markdown data-background-image="maxresdefault.jpg" data-background-size="contain">
+				</section>
+				<section data-markdown>
+					<script type="text/template">
+						## Compile-Time Social Coordination
+
+						### or... <!-- .element: class="fragment" -->
+
+						## Avoiding code inconsistencies <!-- .element: class="fragment" -->
+						---
+
+						## What do you mean inconsistencies?
+
+						Subtle differences in behavior spread across a code base. <!-- .element: class="fragment" -->
+
+						Discovering them is difficult (traversing the call stack). <!-- .element: class="fragment" -->
+
+						Grows more difficult as code base and team increase. <!-- .element: class="fragment" -->
+
+						Very challenging to debug and prevent. <!-- .element: class="fragment" -->
+
+						---
+						## Avoiding inconsistencies 
+
+						### doesn't scale <!-- .element: class="fragment" -->
+
+						* Docs / Wiki / Blogs <!-- .element: class="fragment" -->
+						* Slack / Email / Pairing <!-- .element: class="fragment" -->
+						* Comments <!-- .element: class="fragment" -->
+						* Code review <!-- .element: class="fragment" -->
+
+						---
+						## So sharpen our tooling
+
+						### and let the rust compiler assert our entire code base has no inconsistenceies <!-- .element: class="fragment" -->
+					</script>
+				</section>
+				<section>
+					<pre><code data-trim data-noescape>
+// poison.file
+
+klass Poison(entity)
+	onTick()
+		entity.health -= 1
+					</code></pre>
+					<pre class="fragment"><code data-trim data-noescape>
+// missile.file
+
+klass Missile
+	onCollide()
+		lock(entity)
+			entity.health -= 5
+					</code></pre>
+				</section>
+				<section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+let entity = Entity { health: 100 };
+let mutex = Mutex::new(entity);
+						</code></pre>
+					</section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+let entity = Entity { health: 100 };
+let mutex = Mutex::new(entity);
+entity.health -= 5;
+						</code></pre>
+						<pre class="fragment"><code data-trim data-noescape class="shell">
+|
+|     let entity = Entity { health: 100 };
+|         ---------- move occurs because `entity` has type 
+| 									`Entity`, which does not implement the
+|										`Copy` trait
+|     let mutex = Mutex::new(entity);
+|                            ------ value moved here
+|     entity.health -= 5;
+|     ^^^^^^^^^^^^^^^^^^ value used here after move
+						</code></pre>
+					</section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+let entity = Entity { health: 100 };
+let mutex = Mutex::new(entity);
+mutex.lock().unwrap().health -= 5;
+						</code></pre>
+					</section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+let entity = Entity { health: 100 };
+let mutex = Mutex::new(entity);
+let locked_entity = mutex.lock().unwrap();
+locked_entity.health -= 5; // lock still held
+drop(locked_entity); // lock released
+						</code></pre>
+						<pre class="fragment"><code data-trim data-noescape class="rust">
+fn collide() {
+	let entity = Entity { health: 100 };
+	let mutex = Mutex::new(entity);
+	let locked_entity = mutex.lock().unwrap();
+	locked_entity.health -= 5; // lock still held
+} // lock released
+						</code></pre>
+					</section>
+				</section>
+				<section>
+					<pre><code data-trim data-noescape class="rust">
+// request.file
+
+let connection = get_connection();
+connection.write_data(&data);
+emit_event(&Event::SavedData);
+					</code></pre>
+					<pre class="fragment"><code data-trim data-noescape class="rust">
+// event.file
+
+fn emit_event(kind: &Event) {
+	let connection = get_connection();
+	connection.write_event(kind);
+}
+					</code></pre>
+				</section>
+				<section>
+					<pre><code data-trim data-noescape class="rust">
+struct Token { ... }
+
+fn get_connection<'a>(token: &'a mut Token)
+	-> Connection<'a> { ... }
+					</code></pre><!-- ' -->
+					<pre class="fragment"><code data-trim data-noescape class="rust">
+let connection = get_connection(&mut token);
+connection.write_data(&data);
+emit_event(&Event::SavedData, &mut token); // compile error
+					</code></pre>
+					<pre class="fragment"><code data-trim data-noescape class="rust">
+let connection = get_connection(&mut token);
+connection.write_data(&data);
+drop(connection);
+emit_event(&Event::SavedData, &mut token); // all good
+					</code></pre>
+				</section>
+				<section data-markdown>
+					<textarea data-template>
+						## How does it apply to us?
+
+						* Daniel's encryption mojotime
+						* Systra CQRS
+						* setState POC
+					</textarea>
+				</section>
+				<section>
+					<pre><code data-trim data-noescape class="rust">
+fn encrypt_message(key: &Key, nonce: Nonce, ...) {
+    ...
+}
+
+let nonce = gen_nonce();
+let tag = encrypt_message(&key, nonce, ...);
+					</code></pre>
+					<pre class="fragment"><code data-trim data-noescape class="rust">
+mod libsodium {
+	struct Nonce { ... }
+	impl Clone for Nonce { ... }
+}
+
+let x = Nonce::new(...);
+let y = x.clone(); // y is a duplicate of x
+					</code></pre>
+					<pre class="fragment"><code data-trim data-noescape>
+struct Nonce {
+	inner: libsodium::Nonce
+}
+					</code></pre>
+				</section>
+				<section>
+					<img src="./oscc-diagram.png" />
+				</section>
+				<section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+let (sender, receiver) = mpsc::unbounded_channel();
+let inner = InnerOsccState {
+	sender,
+	obc_state: RwLock::new(Arc::new(ObcState { ... }),
+	keypad_state: RwLock::new(Arc::new(KeypadState { ... }),
+	gateway_state: RwLock::new(Arc::new(GatewayState{ ... }),
+	...
+}
+let worker = spawn(async move { inner.run(receiver).await });
+let state = OsccState { inner, sender, worker };
+						</code></pre>
+					</section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+pub async fn obc_state(&self) -> Arc<ObcState> {
+	self.obc_serial_state.read().await.clone()
+}
+
+async fn receive(&self, message: OsccStateMessage) {
+	match message {
+		OsccStateMessage::ObcEvent(data) => {
+			...
+			*self.obc_state.write().await = Arc::new(state)
+		}
+		OsccStateMessage::KeypadEvent(data) => {
+			...
+			*self.keypad_state.write().await = Arc::new(state)
+		}
+		...
+	}
+}
+						</code></pre>
+					</section>
+					<section>
+						<img src="./oscc-lock-free.png" />
+					</section>
+				</section>
+				<section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+struct State { ... };
+impl !Send for State {};
+impl !Sync for State {};
+
+fn render(&self) {
+	let curr_state = self.state;
+	self.set_state(async move |state| {
+		state.count = curr_state.count + 1; // compile error
+	});
+}
+						</code></pre>
+					</section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+fn component() {
+	// impl !Send/!Sync for counter's type
+	let (counter, set_counter) = use_state!(0);
+
+	use_effect!(async move {
+		set_interval(async move {
+			console.log("Counter is: " + counter); // compile error
+		}, 1000);
+	});
+}
+						</code></pre>
+					</section>
+					<section>
+						<pre><code data-trim data-noescape class="rust">
+fn component() {
+	// impl !Send/!Sync
+	let (counter, set_counter) = use_state!(0);
+
+	// impl Send/Sync
+	use_effect!(async move |counter| {
+		set_interval(async move {
+			console.log("Counter is: " + counter);
+		}, 1000);
+	}, counter);
+}
+						</code></pre>
+					</section>
+				</section>
+				<section data-markdown>
+					<script type="text/template">
+						# Removed problems
+
+						* Race condition
+						* Resource pool exhaustion
+						* Security
+						* Deadlocking
+
+						only things left are cache invalidation and naming things <!-- .element: class="fragment" -->
+					</script>
+				</section>
+				<section data-markdown>
+					<script type="text/template">
+						The rust compiler is often described as difficult to learn.
+
+						But its easier than solving the same problems over and over. <!-- .element: class="fragment" -->
+					</script>
+				</section>
+				<section>
+					<iframe width="1020" height="630" src="https://www.youtube.com/embed/BcZFw7XpgFg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+				</section>
+				<section data-markdown>
+					<script type="text/template">
+						# Links
+
+						* [rust conf playlist](https://www.youtube.com/playlist?list=PL85XCvVPmGQgACNMZlhlRZ4zlKZG_iWH5)
+						* [gource](https://gource.io/)
+					</script>
+				</section>
 			</div>
 		</div>
 
